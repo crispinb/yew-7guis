@@ -20,7 +20,9 @@ fn app() -> Html {
               <>
                   <h2>{"7GUIs"}</h2>
                   <Counter title={"Counter"} />
+                  <hr />
                   <TemperatureConverter title={"Temperature Converter"}/>
+                  <hr />
               </>
           }
 }

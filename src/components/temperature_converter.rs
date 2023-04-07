@@ -8,67 +8,64 @@ pub struct Props {
     pub title: String,
 }
 
+/// Immutable state container for temp in f and c, and last input
 #[derive(PartialEq, Debug)]
-struct Temperature {
+struct TemperatureState {
     celsius: f32,
     fahrenheit: f32,
-    invalid_change: Option<TemperatureInput>,
+    failed_edit: Option<TemperatureEdit>,
 }
 
-/// Immutable state container for temp in f and c, and last input
-impl Default for Temperature {
+impl Default for TemperatureState {
     fn default() -> Self {
         const CELSIUS: f32 = 0.0;
         Self {
             celsius: CELSIUS,
             fahrenheit: Self::f_to_c(CELSIUS),
-            invalid_change: None,
+            failed_edit: None,
         }
     }
 }
 
-impl Clone for Temperature {
+impl Clone for TemperatureState {
     fn clone(&self) -> Self {
         Self {
             celsius: self.celsius,
             fahrenheit: self.fahrenheit,
-            invalid_change: self.invalid_change.clone(),
+            failed_edit: self.failed_edit.clone(),
         }
     }
 }
 
-impl Temperature {
-    fn with_change_candidate(self, value: TemperatureInput) -> Self {
-        let mut celsius: f32 = self.celsius;
-        let mut fahrenheit: f32 = self.fahrenheit;
-        let mut invalid_change = None;
-        match value.to_float() {
-            Ok(temperature_value) => match value {
-                TemperatureInput::Celsius(_) => {
-                    celsius = temperature_value;
-                    fahrenheit = Self::c_to_f(temperature_value);
+impl TemperatureState {
+    fn with_edit(mut self, edit: TemperatureEdit) -> Self {
+        match edit.to_float() {
+            Ok(temperature_value) => match edit {
+                TemperatureEdit::Celsius(_) => {
+                    self.celsius = temperature_value;
+                    self.fahrenheit = Self::c_to_f(temperature_value);
+                    self.failed_edit = None;
                 }
-                TemperatureInput::Fahrenheit(_) => {
-                    fahrenheit = temperature_value;
-                    celsius = Self::f_to_c(temperature_value);
+                TemperatureEdit::Fahrenheit(_) => {
+                    self.fahrenheit = temperature_value;
+                    self.celsius = Self::f_to_c(temperature_value);
+                    self.failed_edit = None;
                 }
             },
             Err(_) => {
-                invalid_change = Some(value);
+                self.failed_edit = Some(edit);
             }
         }
 
-        Self {
-            celsius,
-            fahrenheit,
-            invalid_change,
-        }
+        self.clone()
     }
 
-    fn last_c(&self) -> (bool, String) {
-        match self.invalid_change {
-            Some(ref change) => {
-                if let TemperatureInput::Celsius(value) = change {
+    /// Returns (false, "failed edit value") if c is currently being edited, and is invalid
+    /// (true, "value") otherwise
+    fn c_display(&self) -> (bool, String) {
+        match self.failed_edit {
+            Some(ref edit) => {
+                if let TemperatureEdit::Celsius(value) = edit {
                     (false, value.to_string())
                 } else {
                     (true, self.celsius.to_string())
@@ -78,10 +75,12 @@ impl Temperature {
         }
     }
 
-    fn last_f(&self) -> (bool, String) {
-        match self.invalid_change {
-            Some(ref change) => {
-                if let TemperatureInput::Fahrenheit(value) = change {
+    /// Returns (false, "failed edit value") if f is currently being edited, and is invalid
+    /// (true, "value") otherwise
+    fn f_display(&self) -> (bool, String) {
+        match self.failed_edit {
+            Some(ref edit) => {
+                if let TemperatureEdit::Fahrenheit(value) = edit {
                     (false, value.to_string())
                 } else {
                     (true, self.fahrenheit.to_string())
@@ -101,16 +100,25 @@ impl Temperature {
 }
 
 #[derive(Debug, PartialEq)]
-enum TemperatureInput {
+enum TemperatureEdit {
     Celsius(String),
     Fahrenheit(String),
 }
 
-impl Clone for TemperatureInput {
+impl Clone for TemperatureEdit {
     fn clone(&self) -> Self {
         match self {
             Self::Celsius(value) => Self::Celsius(value.clone()),
             Self::Fahrenheit(value) => Self::Fahrenheit(value.clone()),
+        }
+    }
+}
+
+impl TemperatureEdit {
+    fn to_float(&self) -> Result<f32, ParseFloatError> {
+        match self {
+            TemperatureEdit::Celsius(ref val) => val.parse(),
+            TemperatureEdit::Fahrenheit(ref val) => val.parse(),
         }
     }
 }
@@ -122,26 +130,17 @@ enum TemperatureUnit {
 }
 
 impl TemperatureUnit {
-    fn to_input(&self, value: String) -> TemperatureInput {
+    fn to_input(&self, value: String) -> TemperatureEdit {
         match self {
-            TemperatureUnit::Celsius => TemperatureInput::Celsius(value),
-            TemperatureUnit::Fahrenheit => TemperatureInput::Fahrenheit(value),
-        }
-    }
-}
-
-impl TemperatureInput {
-    fn to_float(&self) -> Result<f32, ParseFloatError> {
-        match self {
-            TemperatureInput::Celsius(ref val) => val.parse(),
-            TemperatureInput::Fahrenheit(ref val) => val.parse(),
+            TemperatureUnit::Celsius => TemperatureEdit::Celsius(value),
+            TemperatureUnit::Fahrenheit => TemperatureEdit::Fahrenheit(value),
         }
     }
 }
 
 #[function_component(TemperatureConverter)]
 pub fn temperature_converter(Props { title }: &Props) -> Html {
-    let temperature_state = use_state(Temperature::default);
+    let temperature_state = use_state(TemperatureState::default);
 
     let change_temp_callback = |unit: TemperatureUnit| {
         let temperature_state = temperature_state.clone();
@@ -149,17 +148,15 @@ pub fn temperature_converter(Props { title }: &Props) -> Html {
             let input_element = event.target_unchecked_into::<HtmlInputElement>();
             let input_value = input_element.value();
             let input_temperature = unit.to_input(input_value);
-            let temperature = (*temperature_state)
-                .clone()
-                .with_change_candidate(input_temperature);
+            let temperature = (*temperature_state).clone().with_edit(input_temperature);
             temperature_state.set(temperature);
         })
     };
 
-    let f = temperature_state.last_f().1;
-    let f_is_valid = temperature_state.last_f().0;
-    let c = temperature_state.last_c().1;
-    let c_is_valid = temperature_state.last_c().0;
+    let f = temperature_state.f_display().1;
+    let f_is_valid = temperature_state.f_display().0;
+    let c = temperature_state.c_display().1;
+    let c_is_valid = temperature_state.c_display().0;
 
     html! {
         <>
@@ -180,7 +177,6 @@ pub fn temperature_converter(Props { title }: &Props) -> Html {
                     type="text" value={f}
                     oninput={change_temp_callback(TemperatureUnit::Fahrenheit)} />
             </label>
-
         </>
     }
 }
