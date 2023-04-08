@@ -57,11 +57,11 @@ impl TemperatureState {
             }
         }
 
-        self.clone()
+        self
     }
 
-    /// Returns (false, "failed edit value") if c is currently being edited, and is invalid
-    /// (true, "value") otherwise
+    /// Returns (false, [failed edit value]) if c is currently invalid
+    /// (true, [value]) otherwise
     fn c_display(&self) -> (bool, String) {
         match self.failed_edit {
             Some(ref edit) => {
