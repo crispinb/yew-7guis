@@ -39,7 +39,7 @@ impl Clone for TemperatureState {
 
 impl TemperatureState {
     fn with_edit(mut self, edit: TemperatureEdit) -> Self {
-        match edit.to_float() {
+        match edit.value() {
             Ok(temperature_value) => match edit {
                 TemperatureEdit::Celsius(_) => {
                     self.celsius = temperature_value;
@@ -115,7 +115,7 @@ impl Clone for TemperatureEdit {
 }
 
 impl TemperatureEdit {
-    fn to_float(&self) -> Result<f32, ParseFloatError> {
+    fn value(&self) -> Result<f32, ParseFloatError> {
         match self {
             TemperatureEdit::Celsius(ref val) => val.parse(),
             TemperatureEdit::Fahrenheit(ref val) => val.parse(),
